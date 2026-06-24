@@ -326,6 +326,10 @@
       this.scaleX = 1; this.scaleY = 1; // 形变
       this.facing = 1;        // 朝向（左右）：1 朝右
       this.landSquash = 0;    // 落地挤压残值
+      // 掉落状态
+      this.falling = false;
+      this.fallGrounded = false;
+      this.fallVelocityZ = 0;
       // 待机动画（仅在 READY 蹲在平台上时推进）
       this.idleTime = Math.random() * 6;  // 呼吸相位起点（随机化，避免每次同步）
       this.blinkTimer = Util.rand(2.5, 5.5); // 距离下一次眨眼的倒计时
@@ -413,6 +417,34 @@
         this.scaleX = 1 - breath * 0.5;
         this.scaleY = 1 + breath;
       }
+    }
+
+    // 开始掉落（未跳上平台时调用）
+    startFalling() {
+      this.falling = true;
+      this.fallVelocityZ = 0;  // 垂直速度（负数表示向下）
+      this.fallGrounded = false;  // 是否已经落到地面
+    }
+
+    // 掉落动画（每帧），返回 true 表示已落到地面
+    updateFalling(dt) {
+      if (this.fallGrounded) return true;  // 已经落地，持续返回 true
+      if (!this.falling) return false;
+
+      // 重力加速度
+      const gravity = 800;
+      this.fallVelocityZ -= gravity * dt;
+      this.z += this.fallVelocityZ * dt;
+
+      // 判断是否落到地面
+      if (this.z <= 0) {
+        this.z = 0;
+        this.fallGrounded = true;
+        this.falling = false;
+        return true;  // 落地
+      }
+
+      return false;
     }
   }
 
@@ -1030,7 +1062,7 @@
   }
 
   /* ===================== 游戏（状态机 + 主循环） ===================== */
-  const STATE = { READY: 'ready', CHARGING: 'charging', JUMPING: 'jumping', GAMEOVER: 'gameover' };
+  const STATE = { READY: 'ready', CHARGING: 'charging', JUMPING: 'jumping', FALLING: 'falling', GAMEOVER: 'gameover' };
 
   class Game {
     constructor() {
@@ -1056,6 +1088,7 @@
       // 自动连跳（玻璃平台触发）：autoJumpsLeft>0 表示正处于自动连跳中
       this.autoJumpsLeft = 0;   // 剩余自动跳跃次数
       this.autoTimer = 0;       // 自动起跳前的停留倒计时（秒）
+      this.fallTimer = 0;       // 掉落后延迟结束的时间
 
       this._bindUI();
       this._resize();
@@ -1139,6 +1172,7 @@
       this.combo = 0;
       this.autoJumpsLeft = 0;
       this.autoTimer = 0;
+      this.fallTimer = 0;
       this.particles = [];
     }
 
@@ -1268,8 +1302,20 @@
       } else if (this.state === STATE.JUMPING) {
         const landed = this.frog.updateJump(dt);
         if (landed) this._resolveLanding();
+      } else if (this.state === STATE.FALLING) {
+        const grounded = this.frog.updateFalling(dt);
+        if (grounded) {
+          // 落到地面，延迟 0.2 秒后结束游戏
+          this.fallTimer += dt;
+          if (this.fallTimer >= 0.2) {
+            this._gameOver();
+          }
+        }
       }
-      this.frog.updateLand(dt);
+      // 掉落状态下不更新落地挤压回弹
+      if (this.state !== STATE.FALLING) {
+        this.frog.updateLand(dt);
+      }
 
       // 自动连跳推进：仅在 READY（蹲在平台上）时计时，到点自动起跳一次
       if (this.state === STATE.READY && this.autoJumpsLeft > 0) {
@@ -1358,12 +1404,14 @@
           this._burstParticles(targetScreen.x, targetScreen.y - target.height * 0.2, '#a8e8ff', 24);
         }
       } else {
-        // 失败：掉落动画（连跳途中掉落也算结束）
+        // 失败：开始掉落动画
         this.autoJumpsLeft = 0;
         this.autoTimer = 0;
         this._burstParticles(frogScreen.x, frogScreen.y, '#3f9a3a', 14, 120);
         this.audio.fail();
-        this._gameOver();
+        this.frog.startFalling();
+        this.fallTimer = 0;  // 掉落后延迟结束的时间
+        this.state = STATE.FALLING;
       }
     }
 
