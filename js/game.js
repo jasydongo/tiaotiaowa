@@ -1231,8 +1231,26 @@
 
     // 执行一次跳跃（玩家松手 / 自动连跳共用）：按 power 计算轨迹并起跳
     _performJump(power) {
-      const traj = this._calcJumpTrajectory(power);
+      const current = this.platforms[this.currentIdx];
       const target = this.platforms[this.currentIdx + 1];
+      
+      // 计算从平台中心到目标平台的距离
+      const centerDx = target.worldX - current.worldX;
+      const centerDy = target.worldY - current.worldY;
+      const centerDist = Math.hypot(centerDx, centerDy);
+      
+      // 计算从青蛙实际位置到目标平台的距离
+      const frogDx = target.worldX - this.frog.worldX;
+      const frogDy = target.worldY - this.frog.worldY;
+      const frogDist = Math.hypot(frogDx, frogDy);
+      
+      // 计算比例：如果青蛙在边缘，这个比例会大于1
+      const ratio = frogDist / centerDist;
+      
+      // 调整蓄力值，确保从实际位置能跳到目标平台
+      const adjustedPower = Math.min(power * ratio, 1);
+      
+      const traj = this._calcJumpTrajectory(adjustedPower);
       this.frog.facing = (target.worldX - this.frog.worldX) >= 0 ? 1 : -1;
       this.frog.jump(traj.landX, traj.landY, traj.toZ);
       this.state = STATE.JUMPING;
@@ -1264,10 +1282,12 @@
 
     // 根据当前蓄力计算跳跃轨迹参数（蓄力预览与实际起跳共用，保证落点预测精确）
     _calcJumpTrajectory(power) {
+      const current = this.platforms[this.currentIdx];
       const target = this.platforms[this.currentIdx + 1];
       const dist = power * CONST.JUMP_DIST_MAX;
-      const fromX = this.frog.worldX, fromY = this.frog.worldY, fromZ = this.frog.baseZ;
-      // 方向 = 当前平台 -> 下一平台
+      // 使用当前平台中心作为起点，而非青蛙实际位置，这样无论青蛙在平台的哪个位置都能跳到下一个平台中心
+      const fromX = current.worldX, fromY = current.worldY, fromZ = current.height;
+      // 方向 = 当前平台中心 -> 下一平台中心
       const dx = target.worldX - fromX;
       const dy = target.worldY - fromY;
       const dirLen = Math.hypot(dx, dy) || 1;
