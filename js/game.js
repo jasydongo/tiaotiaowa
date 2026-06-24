@@ -36,7 +36,7 @@
     PLATFORM_MAX_OFFSET: 2.2,   // 左右最大偏移（worldY）
 
     // 玻璃平台（特殊）：每跳 GLASS_INTERVAL 次出现，落上触发 GLASS_AUTO_JUMPS 次自动连跳
-    GLASS_INTERVAL: 30,        // 每多少次跳跃生成一次玻璃平台
+    GLASS_INTERVAL: 20,        // 每多少次跳跃生成一次玻璃平台
     GLASS_AUTO_JUMPS: 3,       // 触发自动连续跳跃的次数
     GLASS_AUTO_DELAY: 0.45,    // 自动起跳前在平台上停留的秒数（视觉缓冲）
 
@@ -1197,10 +1197,21 @@
       this.autoTimer = CONST.GLASS_AUTO_DELAY;
     }
 
-    // 自动起跳一次：直接朝下一平台中心跳（满蓄力的标准落点）
+    // 自动起跳一次：直接朝下一平台中心跳（精确距离，确保落到平台中心）
     _performAutoJump() {
       if (this.state !== STATE.READY) return;
-      this._performJump(1); // 自动跳总是准确命中下一平台中心
+      const target = this.platforms[this.currentIdx + 1];
+      const fromX = this.frog.worldX, fromY = this.frog.worldY;
+      
+      // 计算到目标平台的精确距离
+      const dx = target.worldX - fromX;
+      const dy = target.worldY - fromY;
+      const exactDist = Math.hypot(dx, dy);
+      
+      // 使用精确距离对应的蓄力值（确保落到平台中心）
+      const exactPower = Math.min(exactDist / CONST.JUMP_DIST_MAX, 1);
+      
+      this._performJump(exactPower);
       this.audio.jump();
     }
 
