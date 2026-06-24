@@ -320,6 +320,10 @@
       this.scaleX = 1; this.scaleY = 1; // 形变
       this.facing = 1;        // 朝向（左右）：1 朝右
       this.landSquash = 0;    // 落地挤压残值
+      // 待机动画（仅在 READY 蹲在平台上时推进）
+      this.idleTime = Math.random() * 6;  // 呼吸相位起点（随机化，避免每次同步）
+      this.blinkTimer = Util.rand(2.5, 5.5); // 距离下一次眨眼的倒计时
+      this.blinkAnim = 0;    // 眨眼进度 0..1（>0 表示正在眨，sin 包络做闭-睁）
     }
     // 蓄力（每帧）
     charging(dt) {
@@ -380,6 +384,28 @@
         // 静止呼吸
         this.scaleX = Util.damp(this.scaleX, 1, 8, dt);
         this.scaleY = Util.damp(this.scaleY, 1, 8, dt);
+      }
+    }
+
+    // 待机动画：呼吸起伏 + 微浮 + 眨眼（仅在 READY 蹲在平台上时调用）
+    updateIdle(dt) {
+      this.idleTime += dt;
+      // 眨眼计时
+      this.blinkTimer -= dt;
+      if (this.blinkAnim > 0) {
+        // 眨眼包络：约 0.16s 内闭-睁
+        this.blinkAnim -= dt / 0.16;
+        if (this.blinkAnim < 0) this.blinkAnim = 0;
+      }
+      if (this.blinkTimer <= 0) {
+        this.blinkAnim = 1;
+        this.blinkTimer = Util.rand(2.5, 6); // 下次眨眼间隔（随机化）
+      }
+      // 仅当没有其它形变（蓄力/落地）在影响 scale 时，叠加呼吸
+      if (this.charge === 0 && this.landSquash === 0 && !this.jumping) {
+        const breath = Math.sin(this.idleTime * 2.0) * 0.04; // 呼吸：纵向 ±4%
+        this.scaleX = 1 - breath * 0.5;
+        this.scaleY = 1 + breath;
       }
     }
   }
@@ -738,9 +764,13 @@
     drawFrog(cam, frog) {
       const p = cam.project(frog.worldX, frog.worldY, frog.z);
       const ctx = this.ctx;
+      // 待机微浮：READY 时身体随呼吸轻轻上下浮动
+      const idleFloat = (frog.charge === 0 && !frog.jumping && frog.landSquash === 0)
+        ? Math.sin(frog.idleTime * 2.0) * 1.6   // ±1.6px 浮动
+        : 0;
       ctx.save();
       // 锚点 = 青蛙脚掌所在的平台顶面中心；把身体整体上抬，使脚掌贴在中心而非身体下半身压在平台边缘
-      ctx.translate(p.x, p.y - CONST.FROG_FEET_OFFSET);
+      ctx.translate(p.x, p.y - CONST.FROG_FEET_OFFSET - idleFloat);
       ctx.scale(frog.scaleX, frog.scaleY);
       // （已禁用空中翻转，青蛙保持正面朝上）
 
@@ -772,22 +802,28 @@
       // 眼睛（两只凸起的大眼）
       const eyeY = -r * 0.7;
       const eyeDX = r * 0.45;
+      // 眨眼闭眼度：0=睁，1=完全闭（用 sin 包络做闭-睁过渡）
+      const blinkClose = Math.sin(frog.blinkAnim * Math.PI);
       [-1, 1].forEach(s => {
         // 眼包（绿色凸起）
         ctx.fillStyle = '#7ed957';
         ctx.beginPath();
         ctx.arc(s * eyeDX, eyeY, r * 0.32, 0, Math.PI * 2);
         ctx.fill();
-        // 眼白
+        // 眼白（眨眼时纵向压扁）
         ctx.fillStyle = '#ffffff';
+        ctx.save();
+        ctx.translate(s * eyeDX, eyeY - 1);
+        ctx.scale(1, 1 - blinkClose);
         ctx.beginPath();
-        ctx.arc(s * eyeDX, eyeY - 1, r * 0.24, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2);
         ctx.fill();
         // 瞳孔（朝向）
         ctx.fillStyle = '#1a1a1a';
         ctx.beginPath();
-        ctx.arc(s * eyeDX + frog.facing * 2, eyeY, r * 0.12, 0, Math.PI * 2);
+        ctx.arc(frog.facing * 2, 1, r * 0.12, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
       });
 
       // 嘴（蓄力时张开）
@@ -1067,6 +1103,12 @@
         if (landed) this._resolveLanding();
       }
       this.frog.updateLand(dt);
+
+      // 待机动画（呼吸 / 微浮 / 眨眼）：放在 updateLand 之后，使呼吸形变
+      // 在落地挤压回弹恢复之后才叠加，避免被其 damp 回 1 的分支覆盖
+      if (this.state === STATE.READY) {
+        this.frog.updateIdle(dt);
+      }
 
       // 平台弹动衰减
       this.platforms.forEach(p => { if (p.bounce > 0) p.bounce = Math.max(0, p.bounce - dt * 3); });
