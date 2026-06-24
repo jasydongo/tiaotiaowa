@@ -933,6 +933,7 @@
 
       this.state = STATE.READY;
       this.score = 0;
+      this.jumps = 0; // 本局已成功跳跃的次数
       this.best = Storage.get();
       this.combo = 0;
       this.platforms = [];
@@ -963,8 +964,10 @@
     /* ---------- 初始化 / 重置 ---------- */
     _bindUI() {
       this.elScore = document.getElementById('score');
+      this.elJumps = document.getElementById('jumps');
       this.elBest = document.getElementById('best');
       this.elFinalScore = document.getElementById('final-score');
+      this.elFinalJumps = document.getElementById('final-jumps');
       this.elFinalBest = document.getElementById('final-best');
       this.elOverTitle = document.getElementById('over-title');
       this.elOverMsg = document.getElementById('over-msg');
@@ -1016,6 +1019,7 @@
       this.frog.reset(start.worldX, start.worldY, start.height);
       this.camera.snapTo(start.worldX, start.worldY);
       this.score = 0;
+      this.jumps = 0;
       this.combo = 0;
       this.particles = [];
     }
@@ -1147,6 +1151,7 @@
       if (onPlatform) {
         // 成功落地
         this.currentIdx += 1;
+        this.jumps += 1; // 成功跳跃次数 +1
         // 平台弹动
         target.bounce = 1;
         // 完美判定
@@ -1180,6 +1185,7 @@
       const newBest = this.score > this.best;
       if (newBest) { this.best = this.score; Storage.set(this.best); }
       this.elFinalScore.textContent = this.score;
+      this.elFinalJumps.textContent = this.jumps;
       this.elFinalBest.textContent = this.best;
       this.elOverTitle.textContent = newBest ? '新纪录！' : '游戏结束';
       this.elOverTitle.classList.toggle('new-best', newBest);
@@ -1195,6 +1201,7 @@
     /* ---------- HUD / 特效 ---------- */
     _updateHUD() {
       this.elScore.textContent = this.score;
+      this.elJumps.textContent = this.jumps;
       this.elBest.textContent = this.best;
     }
     _popCombo(combo) {

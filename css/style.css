@@ -74,6 +74,13 @@ html, body {
 
 .score-best b { color: var(--amber); }
 
+.score-jumps {
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(243, 255, 232, 0.7);
+}
+.score-jumps b { color: var(--leaf); }
+
 .icon-btn {
   pointer-events: auto;
   width: 44px;
