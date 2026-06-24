@@ -1,37 +1,67 @@
-# jumpfrog
+# 跳跳蛙 · Jumping Frog 🐸
 
-#### 介绍
-跳跳蛙
+微信「跳一跳」玩法的 WEB 小游戏。一只青蛙在森林的**木桩、蘑菇、石台**之间蓄力跳跃，落在平台中心可触发**完美连击**加倍得分。
 
-#### 软件架构
-软件架构说明
+纯原生实现：HTML5 Canvas 2D + 等距斜投影伪 3D，**无任何第三方依赖**。
 
+---
 
-#### 安装教程
+## 🎮 玩法
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1. **按住**任意位置蓄力，**松开**起跳 —— 按得越久，跳得越远越高。
+2. 落在下一个平台上 → **+1 分**，镜头前移，新平台不断刷新。
+3. 落在平台**中心圈**内 → **完美落地**，连击翻倍（×2、×4、×6…）+ 金色粒子特效。
+4. 落空、掉下或跳过头 → 游戏结束。本地自动记录历史最高分。
 
-#### 使用说明
+## 🕹️ 操作
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+| 设备 | 蓄力 | 起跳 |
+|------|------|------|
+| 桌面 | 鼠标按住 / `空格` | 松开 |
+| 手机 | 手指按住屏幕 | 松开 |
 
-#### 参与贡献
+> 右上角 🔊 按钮可切换音效（Web Audio 实时合成）。
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+## 🚀 运行
 
+最简单 —— 双击 `index.html` 用浏览器打开即可。
 
-#### 特技
+或起一个本地静态服务器（可选，避免某些浏览器对本地文件的策略限制）：
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+```bash
+# Python
+python -m http.server 8000
+# 然后访问 http://localhost:8000
+
+# Node (http-server)
+npx http-server -p 8000
+```
+
+## 📁 项目结构
+
+```
+ZCodeProject/
+├── index.html        # 页面骨架 + Canvas
+├── css/style.css     # 全屏布局与 UI 浮层
+├── js/game.js        # 全部游戏逻辑（模块化）
+└── README.md
+```
+
+## 🧩 技术要点
+
+- **伪 3D**：等距斜投影（isometric），平台为顶面菱形 + 双侧面的立体方块，按 `worldX + worldY` 远近排序绘制。
+- **物理**：蓄力曲线 → 抛物线跳跃 `z = 4·h·t·(1−t)`，落地挤压回弹形变。
+- **镜头**：指数平滑跟随（`damp`），跳跃中追踪青蛙，静止时锁定当前平台。
+- **判定**：青蛙与目标平台投影到屏幕后的距离对比，中心圈半径内即完美。
+- **音效**：Web Audio API 振荡器合成（跳跃、落地、完美、失败），无需音频文件。
+- **存档**：`localStorage` 持久化最高分（键名 `tiao_tiao_wa_best`）。
+- **自适应**：DPR 高清渲染，桌面/移动端布局与输入全适配。
+
+## 🌲 视觉主题
+
+深绿森林夜景：层叠树影视差 + 漂浮萤火虫粒子 + 林冠月光光晕 + 地面雾气。
+平台三种随机样式：木桩（年轮纹理）、蘑菇（红伞白点）、石台（苔藓点缀）。
+
+---
+
+祝玩得开心，跳出新纪录！🏆
