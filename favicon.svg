@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- 背景：森林夜景深绿（与项目 theme-color 一致） -->
+  <rect width="64" height="64" rx="14" fill="#0d2b1a"/>
+
+  <!-- 身体/头部 -->
+  <ellipse cx="32" cy="39" rx="22" ry="17" fill="#7ed957"/>
+  <ellipse cx="32" cy="41" rx="16" ry="12" fill="#5cbf44"/>
+
+  <!-- 左眼凸起 -->
+  <circle cx="22" cy="24" r="9" fill="#7ed957"/>
+  <circle cx="22" cy="23" r="6.5" fill="#ffffff"/>
+  <circle cx="23" cy="24" r="3" fill="#1a1a1a"/>
+
+  <!-- 右眼凸起 -->
+  <circle cx="42" cy="24" r="9" fill="#7ed957"/>
+  <circle cx="42" cy="23" r="6.5" fill="#ffffff"/>
+  <circle cx="43" cy="24" r="3" fill="#1a1a1a"/>
+
+  <!-- 嘴 -->
+  <path d="M 24 43 Q 32 49 40 43" stroke="#2c5e22" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+</svg>
