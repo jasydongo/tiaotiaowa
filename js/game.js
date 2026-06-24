@@ -35,6 +35,11 @@
     PLATFORM_MAX_GAP: 7.0,     // 平台间最大世界距离
     PLATFORM_MAX_OFFSET: 2.2,   // 左右最大偏移（worldY）
 
+    // 玻璃平台（特殊）：每跳 GLASS_INTERVAL 次出现，落上触发 GLASS_AUTO_JUMPS 次自动连跳
+    GLASS_INTERVAL: 30,        // 每多少次跳跃生成一次玻璃平台
+    GLASS_AUTO_JUMPS: 3,       // 触发自动连续跳跃的次数
+    GLASS_AUTO_DELAY: 0.45,    // 自动起跳前在平台上停留的秒数（视觉缓冲）
+
     // 蓄力与跳跃物理
     CHARGE_RATE: 1.2,          // 每秒蓄力增长
     CHARGE_MAX: 1.0,
@@ -284,6 +289,7 @@
         stone:    { topR: 0.9, height: 22, sway: 0 },
         leaf:     { topR: 1.4, height: 12, sway: 0.8 }, // 荷叶，大而矮、略软
         tower:    { topR: 0.8, height: 96, sway: 0 },   // 树桩高塔，高而窄
+        glass:    { topR: 1.1, height: 34, sway: 0 },   // 玻璃：中等大小、略矮，带辉光
       };
       const s = sizeMap[type];
       this.topR = s.topR;
@@ -604,6 +610,9 @@
 
     /* ---------- 平台 ---------- */
     drawPlatform(cam, plat) {
+      // 玻璃平台：半透明 + 辉光 + 高光，与其它平台渲染差异大，单独绘制
+      if (plat.type === 'glass') return this._drawGlassPlatform(cam, plat);
+
       const ctx = this.ctx;
       const top = cam.project(plat.worldX, plat.worldY, plat.height);
       // 弹动：高度轻微变化
@@ -745,6 +754,109 @@
       }
 
       // 平台中心标记圈（完美落点提示）—— 仅当前目标平台显示，由调用方决定
+    }
+
+    // 玻璃平台专用渲染：半透冰蓝、外发光、斜向高光、菱形描边、底座辉光
+    _drawGlassPlatform(cam, plat) {
+      const ctx = this.ctx;
+      const bounceH = Math.sin(plat.bounce * Math.PI) * 4;
+      const cTop = cam.project(plat.worldX, plat.worldY, plat.height + bounceH);
+      const cBase = cam.project(plat.worldX, plat.worldY, 0);
+      const r = plat.topR;
+      const tw = r * CONST.TW;
+      const thh = r * CONST.TH;
+
+      const topPoly = [
+        { x: cTop.x, y: cTop.y - thh },
+        { x: cTop.x + tw, y: cTop.y },
+        { x: cTop.x, y: cTop.y + thh },
+        { x: cTop.x - tw, y: cTop.y },
+      ];
+      const basePoly = [
+        { x: cBase.x + tw, y: cBase.y },
+        { x: cBase.x, y: cBase.y + thh },
+        { x: cBase.x - tw, y: cBase.y },
+      ];
+
+      // —— 地面投影辉光（外发光底盘）——
+      const glow = ctx.createRadialGradient(cBase.x, cBase.y, 2, cBase.x, cBase.y, tw * 1.5);
+      glow.addColorStop(0, 'rgba(150, 230, 255, 0.35)');
+      glow.addColorStop(1, 'rgba(150, 230, 255, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.ellipse(cBase.x, cBase.y, tw * 1.5, thh * 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // —— 侧面（半透明蓝玻璃，右侧偏深）——
+      ctx.fillStyle = 'rgba(70, 150, 200, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(topPoly[1].x, topPoly[1].y);
+      ctx.lineTo(topPoly[2].x, topPoly[2].y);
+      ctx.lineTo(basePoly[1].x, basePoly[1].y);
+      ctx.lineTo(basePoly[0].x, basePoly[0].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(120, 200, 235, 0.45)';
+      ctx.beginPath();
+      ctx.moveTo(topPoly[2].x, topPoly[2].y);
+      ctx.lineTo(topPoly[3].x, topPoly[3].y);
+      ctx.lineTo(basePoly[2].x, basePoly[2].y);
+      ctx.lineTo(basePoly[1].x, basePoly[1].y);
+      ctx.closePath();
+      ctx.fill();
+
+      // —— 顶面：浅冰蓝半透明 ——
+      ctx.fillStyle = 'rgba(200, 240, 255, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(topPoly[0].x, topPoly[0].y);
+      topPoly.forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.closePath();
+      ctx.fill();
+
+      // 顶面左半高光（玻璃反光）
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.beginPath();
+      ctx.moveTo(topPoly[0].x, topPoly[0].y);
+      ctx.lineTo(topPoly[3].x, topPoly[3].y);
+      ctx.lineTo(topPoly[2].x, topPoly[2].y);
+      ctx.closePath();
+      ctx.fill();
+
+      // —— 斜向高光条纹（玻璃质感的核心）——
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(topPoly[0].x, topPoly[0].y);
+      topPoly.forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.closePath();
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cTop.x - tw, cTop.y - thh * 0.5);
+      ctx.lineTo(cTop.x + tw, cTop.y + thh * 1.5);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cTop.x - tw, cTop.y - thh * 1.2);
+      ctx.lineTo(cTop.x + tw, cTop.y + thh * 0.8);
+      ctx.stroke();
+      ctx.restore();
+
+      // —— 顶面菱形描边（勾勒玻璃边缘）——
+      ctx.strokeStyle = 'rgba(220, 245, 255, 0.9)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(topPoly[0].x, topPoly[0].y);
+      topPoly.forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.closePath();
+      ctx.stroke();
+
+      // 中心微光点
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.beginPath();
+      ctx.ellipse(cTop.x, cTop.y, 3, 1.6, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // 在平台顶面中心画完美落点圈（提示）
@@ -941,6 +1053,9 @@
       this.particles = [];
       this.time = 0;
       this.aimLineEnabled = true; // 辅助线开关状态
+      // 自动连跳（玻璃平台触发）：autoJumpsLeft>0 表示正处于自动连跳中
+      this.autoJumpsLeft = 0;   // 剩余自动跳跃次数
+      this.autoTimer = 0;       // 自动起跳前的停留倒计时（秒）
 
       this._bindUI();
       this._resize();
@@ -1021,6 +1136,8 @@
       this.score = 0;
       this.jumps = 0;
       this.combo = 0;
+      this.autoJumpsLeft = 0;
+      this.autoTimer = 0;
       this.particles = [];
     }
 
@@ -1030,7 +1147,11 @@
       // 难度：分数越高，偏移范围与间距上限略增
       const diffBoost = Util.clamp(this.score / 80, 0, 0.4);
       const offset = Util.rand(-CONST.PLATFORM_MAX_OFFSET - diffBoost, CONST.PLATFORM_MAX_OFFSET + diffBoost);
-      const type = Util.pick(CONST.PLATFORM_TYPES);
+      // 玻璃平台：按绝对序号判定 —— 新平台将成为 platforms[newIdx]，亦即即将进行的
+      // 第 newIdx 次跳跃的目标。当 newIdx 是 30 的倍数时为玻璃（触发连跳），且不进入随机池
+      const newIdx = this.platforms.length;
+      const isGlass = newIdx > 0 && newIdx % CONST.GLASS_INTERVAL === 0;
+      const type = isGlass ? 'glass' : Util.pick(CONST.PLATFORM_TYPES);
       const p = new Platform(last.worldX + gap, last.worldY + offset, type);
       this.platforms.push(p);
     }
@@ -1047,7 +1168,8 @@
     }
 
     _onPressStart() {
-      if (this.state !== STATE.READY) return;
+      // 自动连跳进行中时屏蔽玩家蓄力输入，避免打断/冲突
+      if (this.state !== STATE.READY || this.autoJumpsLeft > 0) return;
       this.audio.resume();
       this.state = STATE.CHARGING;
       this.frog.charge = 0;
@@ -1056,12 +1178,29 @@
 
     _onPressEnd() {
       if (this.state !== STATE.CHARGING) return;
-      const traj = this._calcJumpTrajectory(this.frog.charge);
-      // 朝向下一平台
+      this._performJump(this.frog.charge);
+      this.audio.jump();
+    }
+
+    // 执行一次跳跃（玩家松手 / 自动连跳共用）：按 power 计算轨迹并起跳
+    _performJump(power) {
+      const traj = this._calcJumpTrajectory(power);
       const target = this.platforms[this.currentIdx + 1];
       this.frog.facing = (target.worldX - this.frog.worldX) >= 0 ? 1 : -1;
       this.frog.jump(traj.landX, traj.landY, traj.toZ);
       this.state = STATE.JUMPING;
+    }
+
+    // 触发自动连续跳跃（落上玻璃平台时调用）
+    _startAutoJumps() {
+      this.autoJumpsLeft = CONST.GLASS_AUTO_JUMPS;
+      this.autoTimer = CONST.GLASS_AUTO_DELAY;
+    }
+
+    // 自动起跳一次：直接朝下一平台中心跳（满蓄力的标准落点）
+    _performAutoJump() {
+      if (this.state !== STATE.READY) return;
+      this._performJump(1); // 自动跳总是准确命中下一平台中心
       this.audio.jump();
     }
 
@@ -1108,9 +1247,24 @@
       }
       this.frog.updateLand(dt);
 
+      // 自动连跳推进：仅在 READY（蹲在平台上）时计时，到点自动起跳一次
+      if (this.state === STATE.READY && this.autoJumpsLeft > 0) {
+        this.autoTimer -= dt;
+        if (this.autoTimer <= 0) {
+          this.autoJumpsLeft -= 1;
+          if (this.autoJumpsLeft > 0) {
+            this.autoTimer = CONST.GLASS_AUTO_DELAY; // 还有次数：继续等待下一次自动起跳
+          } else {
+            this.autoTimer = 0; // 连跳结束，恢复正常操作
+          }
+          this._performAutoJump();
+        }
+      }
+
       // 待机动画（呼吸 / 微浮 / 眨眼）：放在 updateLand 之后，使呼吸形变
-      // 在落地挤压回弹恢复之后才叠加，避免被其 damp 回 1 的分支覆盖
-      if (this.state === STATE.READY) {
+      // 在落地挤压回弹恢复之后才叠加，避免被其 damp 回 1 的分支覆盖。
+      // 自动连跳中不播放待机动画（青蛙即将起跳）
+      if (this.state === STATE.READY && this.autoJumpsLeft === 0) {
         this.frog.updateIdle(dt);
       }
 
@@ -1172,8 +1326,17 @@
         // 补充平台
         if (this.platforms.length - this.currentIdx < 5) this._spawnNext();
         this.state = STATE.READY;
+
+        // 落到玻璃平台：触发自动连续跳跃（仅首次落上时触发，避免连跳途中再次落 glass 递归叠加）
+        if (target.type === 'glass' && this.autoJumpsLeft === 0) {
+          this._startAutoJumps();
+          this._popGlass();
+          this._burstParticles(targetScreen.x, targetScreen.y - target.height * 0.2, '#a8e8ff', 24);
+        }
       } else {
-        // 失败：掉落动画
+        // 失败：掉落动画（连跳途中掉落也算结束）
+        this.autoJumpsLeft = 0;
+        this.autoTimer = 0;
         this._burstParticles(frogScreen.x, frogScreen.y, '#3f9a3a', 14, 120);
         this.audio.fail();
         this._gameOver();
@@ -1213,6 +1376,20 @@
       this.elComboPop.classList.add('show');
       clearTimeout(this._comboTimer);
       this._comboTimer = setTimeout(() => this.elComboPop.classList.remove('show'), 900);
+    }
+    // 玻璃平台触发：冰蓝色提示 + 自动连跳次数
+    _popGlass() {
+      const txt = `玻璃平台！自动连跳 ×${CONST.GLASS_AUTO_JUMPS}`;
+      this.elComboPop.textContent = txt;
+      this.elComboPop.classList.add('glass');
+      this.elComboPop.classList.remove('show');
+      void this.elComboPop.offsetWidth;
+      this.elComboPop.classList.add('show');
+      clearTimeout(this._comboTimer);
+      this._comboTimer = setTimeout(() => {
+        this.elComboPop.classList.remove('show');
+        this.elComboPop.classList.remove('glass');
+      }, 1100);
     }
     _burstParticles(x, y, color, count, speed = 160) {
       for (let i = 0; i < count; i++) {

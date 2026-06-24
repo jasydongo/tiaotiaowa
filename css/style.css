@@ -126,6 +126,11 @@ html, body {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
+/* 玻璃平台触发提示：冰蓝色调（覆盖默认琥珀色） */
+#combo-pop.glass {
+  color: #a8e8ff;
+  text-shadow: 0 0 18px rgba(168, 232, 255, 0.9), 0 4px 10px rgba(0,0,0,0.5);
+}
 
 /* ===== 全屏覆盖面板 ===== */
 .overlay {
