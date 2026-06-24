@@ -1274,6 +1274,9 @@
       const nx = dx / dirLen, ny = dy / dirLen;
       const landX = fromX + nx * dist;
       const landY = fromY + ny * dist;
+      const debugY = landY - target.worldY;
+      const debugX = landX - target.worldX;
+      console.log({dy:dy, dx:dx, dist:dist, nx:nx, ny:ny, fromX:fromX, fromY:fromY, landX:landX, landY:landY, debugX:debugX, debugY:debugY});
       return { fromX, fromY, fromZ, landX, landY, toZ: target.height, power };
     }
 
