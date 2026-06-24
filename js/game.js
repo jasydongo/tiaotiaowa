@@ -32,8 +32,8 @@
     PLATFORM_TOP_R: 22,        // 顶面菱形半径（世界单位）
     PLATFORM_TYPES: ['stump', 'mushroom', 'stone', 'leaf', 'tower'],
     PLATFORM_MIN_GAP: 2.0,     // 平台间最小世界距离
-    PLATFORM_MAX_GAP: 7.0,     // 平台间最大世界距离
-    PLATFORM_MAX_OFFSET: 2.2,   // 左右最大偏移（worldY）
+    PLATFORM_MAX_GAP: 6.8,     // 平台间最大世界距离
+    PLATFORM_MAX_OFFSET: 4.5,   // 左右最大偏移（worldY）
 
     // 玻璃平台（特殊）：每跳 GLASS_INTERVAL 次出现，落上触发 GLASS_AUTO_JUMPS 次自动连跳
     GLASS_INTERVAL: 20,        // 每多少次跳跃生成一次玻璃平台
@@ -1125,6 +1125,7 @@
     // 建立初始平台序列
     _resetWorld() {
       this.platforms = [];
+      this.offsetDir = undefined; // 重置偏移方向
       // 起始平台（石台，固定位置）
       const start = new Platform(0, 0, 'stone');
       this.platforms.push(start);
@@ -1146,7 +1147,19 @@
       const gap = Util.rand(CONST.PLATFORM_MIN_GAP, CONST.PLATFORM_MAX_GAP);
       // 难度：分数越高，偏移范围与间距上限略增
       const diffBoost = Util.clamp(this.score / 80, 0, 0.4);
-      const offset = Util.rand(-CONST.PLATFORM_MAX_OFFSET - diffBoost, CONST.PLATFORM_MAX_OFFSET + diffBoost);
+      // 曲折排列：偏移方向交替变化，形成之字形或S形轨迹
+      // 首次随机方向，之后每次有概率翻转方向
+      if (this.offsetDir === undefined) {
+        this.offsetDir = Math.random() > 0.5 ? 1 : -1;
+      }
+      // 每 2-4 个平台翻转一次方向，使路径更曲折
+      if (Math.random() < 0.35) {
+        this.offsetDir *= -1;
+      }
+      // 基础偏移 + 随机扰动，增加曲折感
+      const baseOffset = this.offsetDir * (CONST.PLATFORM_MAX_OFFSET * 0.4);
+      const randomOffset = Util.rand(-CONST.PLATFORM_MAX_OFFSET * 0.6, CONST.PLATFORM_MAX_OFFSET * 0.6);
+      const offset = baseOffset + randomOffset + (Math.random() - 0.5) * diffBoost;
       // 玻璃平台：按绝对序号判定 —— 新平台将成为 platforms[newIdx]，亦即即将进行的
       // 第 newIdx 次跳跃的目标。当 newIdx 是 30 的倍数时为玻璃（触发连跳），且不进入随机池
       const newIdx = this.platforms.length;
