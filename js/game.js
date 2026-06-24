@@ -878,7 +878,7 @@
       const ctx = this.ctx;
       // 待机微浮：READY 时身体随呼吸轻轻上下浮动
       const idleFloat = (frog.charge === 0 && !frog.jumping && frog.landSquash === 0)
-        ? Math.sin(frog.idleTime * 2.0) * 1.6   // ±1.6px 浮动
+        ? Math.sin(frog.idleTime * 2.0) * 1.2   // ±1.6px 浮动
         : 0;
       ctx.save();
       // 锚点 = 青蛙脚掌所在的平台顶面中心；把身体整体上抬，使脚掌贴在中心而非身体下半身压在平台边缘
