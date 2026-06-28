@@ -45,7 +45,8 @@
     GLASS_AUTO_DELAY: 0.45,    // 自动起跳前在平台上停留的秒数（视觉缓冲）
 
     // 蓄力与跳跃物理
-    CHARGE_RATE: 0.8,          // 每秒蓄力增长
+    CHARGE_RATE: 0.8,          // 每秒蓄力增长（桌面端）
+    CHARGE_RATE_MOBILE: 0.5,   // 手机端蓄力增长（更慢，便于触屏精准控力；满力约 2 秒）
     CHARGE_MAX: 1.0,
     JUMP_TIME_MIN: 0.32,
     JUMP_TIME_MAX: 1.15,
@@ -341,9 +342,9 @@
       this.blinkTimer = Util.rand(2.5, 5.5); // 距离下一次眨眼的倒计时
       this.blinkAnim = 0;    // 眨眼进度 0..1（>0 表示正在眨，sin 包络做闭-睁）
     }
-    // 蓄力（每帧）
-    charging(dt) {
-      this.charge = Util.clamp(this.charge + dt * CONST.CHARGE_RATE, 0, CONST.CHARGE_MAX);
+    // 蓄力（每帧）；rate 为蓄力速率，桌面/手机端可不同
+    charging(dt, rate) {
+      this.charge = Util.clamp(this.charge + dt * rate, 0, CONST.CHARGE_MAX);
       // 蓄力下蹲：纵向压扁、横向变胖
       const c = this.charge;
       this.scaleX = 1 + c * 0.35;
@@ -1358,6 +1359,10 @@
       this.autoTimer = 0;       // 自动起跳前的停留倒计时（秒）
       this.fallTimer = 0;       // 掉落后延迟结束的时间
 
+      // 设备检测：触屏 + 移动端 UA 判定为手机，使用更慢的蓄力速率便于精准控力
+      this.isMobile = ('ontouchstart' in window) && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      this.chargeRate = this.isMobile ? CONST.CHARGE_RATE_MOBILE : CONST.CHARGE_RATE;
+
       this._bindUI();
       this._resize();
       window.addEventListener('resize', () => this._resize());
@@ -1488,7 +1493,7 @@
       this._updateHUD();
       
       // 调试日志：游戏开始
-      console.log(`[开始] ========== 新游戏开始 ========== | 历史最高分: ${this.best} | 游戏参数: 蓄力速率=${CONST.CHARGE_RATE}, 最大跳跃=${CONST.JUMP_DIST_MAX}, 完美半径=${CONST.PERFECT_RADIUS}`);
+      console.log(`[开始] ========== 新游戏开始 ========== | 历史最高分: ${this.best} | 设备: ${this.isMobile ? '手机' : '桌面'} | 蓄力速率=${this.chargeRate}, 最大跳跃=${CONST.JUMP_DIST_MAX}, 完美半径=${CONST.PERFECT_RADIUS}`);
     }
 
     _onPressStart() {
@@ -1584,7 +1589,7 @@
       this.renderer.fireflies.forEach(f => f.update(dt, this.W, this.H));
 
       if (this.state === STATE.CHARGING) {
-        this.frog.charging(dt);
+        this.frog.charging(dt, this.chargeRate);
         // 蓄力音效（间隔触发）
         this._chargeSfxAcc = (this._chargeSfxAcc || 0) + dt;
         if (this._chargeSfxAcc > 0.18 && this.frog.charge < 1) {
