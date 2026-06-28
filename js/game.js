@@ -30,10 +30,14 @@
 
     // 平台
     PLATFORM_TOP_R: 22,        // 顶面菱形半径（世界单位）
-    PLATFORM_TYPES: ['stump', 'mushroom', 'stone', 'leaf', 'tower'],
+    PLATFORM_TYPES: ['stump', 'mushroom', 'stone', 'leaf', 'tower', 'barrel'],
     PLATFORM_MIN_GAP: 2.0,     // 平台间最小世界距离
     PLATFORM_MAX_GAP: 6.8,     // 平台间最大世界距离
     PLATFORM_MAX_OFFSET: 4.5,   // 左右最大偏移（worldY）
+    // 镜头前瞻：READY/CHARGING 时焦点向「下一平台」方向偏移，确保远距离平台可见。
+    // LOOKAHEAD_RATIO 为满间距时的最大前瞻比例（0.5 = 焦点落在当前与下一平台中点）；
+    // 实际前瞻量随间距线性增长，小间距时几乎不偏移，避免画面抖动。
+    LOOKAHEAD_RATIO: 0.5,
 
     // 玻璃平台（特殊）：每跳 GLASS_INTERVAL 次出现，落上触发 GLASS_AUTO_JUMPS 次自动连跳
     GLASS_INTERVAL: 20,        // 每多少次跳跃生成一次玻璃平台
@@ -48,9 +52,10 @@
     JUMP_DIST_MAX: 11.5,       // 满蓄力最远世界距离（增大以支持从平台边缘跳跃）
     JUMP_HEIGHT_MAX: 150,      // 像素最大高度（视觉）
     PERFECT_RADIUS: 7,         // 完美落地判定半径（屏幕像素）
+    LAND_INRADIUS_RATIO: 0.9,  // 落地判定使用平台顶面内切圆（短半轴 topR*TH）的比例，>1 放宽、<1 收紧
 
     // 镜头
-    CAM_FOLLOW: 2.4,           // 镜头跟随平滑系数
+    CAM_FOLLOW: 1.4,           // 镜头跟随平滑系数（越小越慢越柔和）
 
     // 青蛙绘制
     FROG_FEET_OFFSET: 13,      // 绘制整体上抬（像素）：锚点(脚掌)落在平台顶面中心，身体立于其上
@@ -290,6 +295,7 @@
         leaf:     { topR: 1.4, height: 12, sway: 0.8 }, // 荷叶，大而矮、略软
         tower:    { topR: 0.8, height: 96, sway: 0 },   // 树桩高塔，高而窄
         glass:    { topR: 1.1, height: 34, sway: 0 },   // 玻璃：中等大小、略矮，带辉光
+        barrel:   { topR: 1.0, height: 46, sway: 0 },   // 圆形油桶：圆柱体，金属质感
       };
       const s = sizeMap[type];
       this.topR = s.topR;
@@ -343,6 +349,11 @@
       this.scaleX = 1 + c * 0.35;
       this.scaleY = 1 - c * 0.32;
       this.z = this.baseZ; // 仍在平台顶面
+      
+      // 调试日志：蓄力状态
+      if (c > 0 && c < 1) {
+        console.log(`[蓄力] 蓄力值: ${c.toFixed(3)}, 形变: scaleX=${this.scaleX.toFixed(3)}, scaleY=${this.scaleY.toFixed(3)}`);
+      }
     }
     // 起跳：根据蓄力计算目标点
     jump(targetX, targetY, targetZ) {
@@ -355,6 +366,9 @@
       // 朝向目标
       this.facing = (targetX - this.fromX) >= 0 ? 1 : -1;
       this.spin = 0;
+      
+      // 调试日志：跳跃开始
+      console.log(`[跳跃] 开始跳跃 | 蓄力: ${c.toFixed(3)} | 持续时间: ${this.jumpDur.toFixed(3)}s | 起点: (${this.fromX.toFixed(2)}, ${this.fromY.toFixed(2)}, ${this.fromZ.toFixed(2)}) | 终点: (${this.toX.toFixed(2)}, ${this.toY.toFixed(2)}, ${this.toZ.toFixed(2)}) | 朝向: ${this.facing === 1 ? '右' : '左'}`);
       this.charge = 0;
       this.scaleX = 1; this.scaleY = 1;
     }
@@ -380,6 +394,9 @@
         this.baseZ = this.toZ;
         this.z = this.toZ;
         this.landSquash = 1;
+        
+        // 调试日志：跳跃完成
+        console.log(`[跳跃] 跳跃完成 | 最终位置: (${this.worldX.toFixed(2)}, ${this.worldY.toFixed(2)}, ${this.z.toFixed(2)}) | 跳跃高度: ${h.toFixed(2)}px`);
       }
       return landed;
     }
@@ -502,9 +519,21 @@
       // 把焦点平台置于屏幕偏下中位置
       this.layoutX = 0.5; // 横向比例
       this.layoutY = 0.62; // 纵向比例
+      this.W = 0; this.H = 0;
     }
     setLayout(W, H) {
       this.W = W; this.H = H;
+      // 按宽高比自适应相机布局：
+      // - 横屏（W >= H）：保持 layoutY = 0.62（青蛙偏下，上方留空给后续平台）
+      // - 竖屏（H > W）：随高/宽比增大把焦点上移（最小到 ~0.50），让前方平台
+      //   在垂直方向有更多显示空间，减少"看不到下一个平台"的情况。
+      // 横竖屏切换会触发 _resize -> setLayout，布局随之平滑重算。
+      const aspect = H / W; // >1 为竖屏
+      // 竖屏额外高度因子，clamp 在 [0, 0.4]；横屏时为 0
+      const portraitExtra = Util.clamp(aspect - 1, 0, 0.4);
+      this.layoutX = 0.5;
+      // 竖屏每多出 1 倍宽度的额外高度，焦点上移 0.18；横屏保持 0.62
+      this.layoutY = 0.62 - portraitExtra * 0.18;
     }
     // 跟随某个世界点
     follow(wx, wy) {
@@ -644,6 +673,8 @@
     drawPlatform(cam, plat) {
       // 玻璃平台：半透明 + 辉光 + 高光，与其它平台渲染差异大，单独绘制
       if (plat.type === 'glass') return this._drawGlassPlatform(cam, plat);
+      // 圆形油桶：圆柱体，圆形顶面与菱形平台差异大，单独绘制
+      if (plat.type === 'barrel') return this._drawBarrelPlatform(cam, plat);
 
       const ctx = this.ctx;
       const top = cam.project(plat.worldX, plat.worldY, plat.height);
@@ -669,7 +700,7 @@
         mushroom: { top: '#d9443a', topLight: '#ee6a5a', side: '#efe6d0', sideDark: '#cdbfa0', accent: '#ffffff' },
         stone:    { top: '#8a8f95', topLight: '#a4a9af', side: '#5f6469', sideDark: '#474b4f', accent: '#3c4044' },
         leaf:     { top: '#3fae57', topLight: '#5fc977', side: '#2c7a3d', sideDark: '#1f5a2c', accent: '#bdf0c8' },
-        tower:    { top: '#8a6238', topLight: '#a87a4a', side: '#6a4a2a', sideDark: '#503620', accent: '#3a2614' },
+        tower:    { top: '#a88056', topLight: '#c89a6a', side: '#8a6a4a', sideDark: '#705640', accent: '#5a4634' },
       };
       const c = palette[plat.type];
 
@@ -889,6 +920,243 @@
       ctx.beginPath();
       ctx.ellipse(cTop.x, cTop.y, 3, 1.6, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // 圆形油桶平台专用渲染：圆柱体（圆形顶面 + 桶身），金属质感环箍 + 桶盖
+    _drawBarrelPlatform(cam, plat) {
+      const ctx = this.ctx;
+      const bounceH = Math.sin(plat.bounce * Math.PI) * 4;
+      const cTop = cam.project(plat.worldX, plat.worldY, plat.height + bounceH);
+      const cBase = cam.project(plat.worldX, plat.worldY, 0);
+      const r = plat.topR;
+      // 顶面圆在等距投影下呈椭圆：水平半径 = r*TW，纵向半径 = r*TH
+      const rx = r * CONST.TW;
+      const ry = r * CONST.TH;
+
+      // 调色板：暗红铁皮桶 + 金黄铜箍
+      const bodyTop = '#b5472f';      // 桶口边缘高光
+      const bodyLight = '#9c3a26';    // 桶身左侧（受光）
+      const bodyDark = '#6e2718';     // 桶身右侧（背光）
+      const band = '#e8b04a';         // 黄铜箍
+      const bandDark = '#a87a28';     // 铜箍阴影
+
+      // —— 桶身（矩形 + 左右弧线，构成圆柱侧面）——
+      // 桶身略呈鼓形：中间稍宽，用两段椭圆弧拼接
+      ctx.fillStyle = bodyLight;
+      ctx.beginPath();
+      // 左侧轮廓：从顶面左点到底面左点（直线）
+      ctx.moveTo(cTop.x - rx, cTop.y);
+      ctx.lineTo(cBase.x - rx, cBase.y);
+      // 底面右半弧（底面向下凸）
+      ctx.ellipse(cBase.x, cBase.y, rx, ry, 0, Math.PI, 0, true);
+      // 右侧轮廓：底面右点到顶面右点（直线）
+      ctx.lineTo(cTop.x + rx, cTop.y);
+      // 顶面右半弧（顶面向上凸）
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI, true);
+      ctx.closePath();
+      ctx.fill();
+
+      // 右半侧加深（背光）
+      ctx.fillStyle = bodyDark;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.moveTo(cTop.x, cTop.y - ry * 0.05);
+      ctx.lineTo(cTop.x + rx, cTop.y);
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI, true);
+      ctx.lineTo(cBase.x + rx, cBase.y);
+      ctx.ellipse(cBase.x, cBase.y, rx, ry, 0, 0, Math.PI, false);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // —— 桶身渐变（左亮右暗，强化圆柱感）——
+      const sideGrad = ctx.createLinearGradient(cTop.x - rx, 0, cTop.x + rx, 0);
+      sideGrad.addColorStop(0, 'rgba(255, 200, 160, 0.18)');
+      sideGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+      sideGrad.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+      ctx.fillStyle = sideGrad;
+      ctx.beginPath();
+      ctx.moveTo(cTop.x - rx, cTop.y);
+      ctx.lineTo(cBase.x - rx, cBase.y);
+      ctx.ellipse(cBase.x, cBase.y, rx, ry, 0, Math.PI, 0, true);
+      ctx.lineTo(cTop.x + rx, cTop.y);
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI, true);
+      ctx.closePath();
+      ctx.fill();
+
+      // —— 桶身污渍 / 锈迹 / 滴痕（基于 seed 稳定，不随帧抖动）——
+      // 用 plat.seed 做种子派生确定性随机，保证每帧位置一致
+      const stains = this._barrelStains(plat.seed, rx, ry, cTop, cBase);
+      ctx.save();
+      // 裁剪到桶身区域，避免污渍溢出圆柱轮廓
+      ctx.beginPath();
+      ctx.moveTo(cTop.x - rx, cTop.y);
+      ctx.lineTo(cBase.x - rx, cBase.y);
+      ctx.ellipse(cBase.x, cBase.y, rx, ry, 0, Math.PI, 0, true);
+      ctx.lineTo(cTop.x + rx, cTop.y);
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI, true);
+      ctx.closePath();
+      ctx.clip();
+
+      // 锈迹斑点：暗褐小圆，集中在桶身两侧边缘（背光/积潮处）
+      stains.rust.forEach(s => {
+        ctx.fillStyle = `rgba(74, 42, 22, ${s.a})`;
+        ctx.beginPath();
+        ctx.ellipse(cTop.x + s.x, s.y, s.w, s.h, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 油漆滴痕：从上往下流的不规则色块（更深，模拟积垢/油渍下淌）
+      stains.drips.forEach(d => {
+        ctx.fillStyle = `rgba(40, 18, 10, ${d.a})`;
+        ctx.beginPath();
+        ctx.moveTo(cTop.x + d.x - d.w, d.yTop);
+        ctx.quadraticCurveTo(cTop.x + d.x - d.w * 0.5, d.yTop + d.len * 0.5,
+                             cTop.x + d.x - d.w * 0.3, d.yTop + d.len);
+        ctx.quadraticCurveTo(cTop.x + d.x, d.yTop + d.len + d.w,
+                             cTop.x + d.x + d.w * 0.3, d.yTop + d.len);
+        ctx.quadraticCurveTo(cTop.x + d.x + d.w * 0.5, d.yTop + d.len * 0.5,
+                             cTop.x + d.x + d.w, d.yTop);
+        ctx.closePath();
+        ctx.fill();
+      });
+
+      // 浅色水渍斑：发灰的潮痕，横向延展（贴着铜箍上下沿）
+      stains.water.forEach(w => {
+        ctx.fillStyle = `rgba(180, 160, 150, ${w.a})`;
+        ctx.beginPath();
+        ctx.ellipse(cTop.x + w.x, w.y, w.w, w.h, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+
+      // —— 黄铜箍（两道横向环箍，鼓形弧线）——
+      const bands = [0.32, 0.72]; // 沿桶身高度的相对位置
+      bands.forEach(ratio => {
+        const yT = Util.lerp(cTop.y, cBase.y, ratio);
+        const yB = yT + ry * 0.18; // 箍的厚度（视觉）
+        // 箍主体
+        ctx.fillStyle = band;
+        ctx.beginPath();
+        ctx.ellipse(cTop.x, yT, rx, ry, 0, 0, Math.PI);
+        ctx.ellipse(cTop.x, yB, rx, ry, 0, Math.PI, 0, true);
+        ctx.closePath();
+        ctx.fill();
+        // 箍下沿阴影
+        ctx.fillStyle = bandDark;
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath();
+        ctx.ellipse(cTop.x, yB - ry * 0.06, rx, ry, 0, 0, Math.PI);
+        ctx.ellipse(cTop.x, yB, rx, ry, 0, Math.PI, 0, true);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      // —— 顶面圆形（桶盖）：椭圆 + 金属高光 ——
+      ctx.fillStyle = bodyTop;
+      ctx.beginPath();
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 顶面左上高光（金属反光）
+      ctx.fillStyle = 'rgba(255, 230, 200, 0.4)';
+      ctx.beginPath();
+      ctx.ellipse(cTop.x - rx * 0.3, cTop.y - ry * 0.35, rx * 0.45, ry * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 顶面圆形描边（桶口）
+      ctx.strokeStyle = bodyDark;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // —— 顶面污渍（积水 / 油渍斑块，裁剪在圆形顶盖内）——
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cTop.x, cTop.y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.clip();
+      stains.top.forEach(t => {
+        ctx.fillStyle = `rgba(50, 28, 16, ${t.a})`;
+        ctx.beginPath();
+        ctx.ellipse(cTop.x + t.x, cTop.y + t.y, t.w, t.h, t.rot, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+
+      // 中心铆钉小高光（顶面中心标记，呼应完美落点）
+      ctx.fillStyle = bandDark;
+      ctx.beginPath();
+      ctx.ellipse(cTop.x, cTop.y, rx * 0.08, ry * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 基于 seed 生成油桶污渍数据（确定性：同 seed → 同污渍，避免帧间闪烁）
+    // 返回 { rust: [], drips: [], water: [], top: [] }，坐标为相对 cTop 的屏幕偏移
+    _barrelStains(seed, rx, ry, cTop, cBase) {
+      // 线性同余伪随机：稳定且廉价
+      let s = (seed * 9301 + 49297) % 233280;
+      const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+      const range = (a, b) => a + rnd() * (b - a);
+
+      const bodyH = cBase.y - cTop.y; // 桶身高度（屏幕像素）
+      const rust = [], drips = [], water = [], top = [];
+
+      // 锈迹斑点（6~9 个）：集中在桶身两侧 30% 区域（积潮生锈）
+      const rustN = 6 + Math.floor(rnd() * 4);
+      for (let i = 0; i < rustN; i++) {
+        const edge = rnd() < 0.5 ? -1 : 1; // 偏左或偏右
+        const x = edge * range(rx * 0.45, rx * 0.95);
+        rust.push({
+          x,
+          y: cTop.y + range(ry * 0.1, bodyH - ry * 0.1),
+          w: range(rx * 0.05, rx * 0.16),
+          h: range(ry * 0.08, ry * 0.22),
+          a: range(0.25, 0.5),
+        });
+      }
+
+      // 油漆滴痕（2~4 条）：从中上部向下流淌
+      const dripN = 2 + Math.floor(rnd() * 3);
+      for (let i = 0; i < dripN; i++) {
+        const x = range(-rx * 0.6, rx * 0.6);
+        const yTop = range(ry * 0.15, bodyH * 0.35);
+        drips.push({
+          x,
+          yTop,
+          len: range(bodyH * 0.2, bodyH * 0.55),
+          w: range(rx * 0.04, rx * 0.09),
+          a: range(0.3, 0.55),
+        });
+      }
+
+      // 浅色水渍（3~5 个）：贴着环箍上下沿的潮痕
+      const waterN = 3 + Math.floor(rnd() * 3);
+      for (let i = 0; i < waterN; i++) {
+        water.push({
+          x: range(-rx * 0.7, rx * 0.7),
+          y: cTop.y + bodyH * range(0.25, 0.75),
+          w: range(rx * 0.1, rx * 0.28),
+          h: range(ry * 0.12, ry * 0.2),
+          a: range(0.12, 0.22),
+        });
+      }
+
+      // 顶面污渍（3~5 块）：圆形顶盖上的积油 / 污斑
+      const topN = 3 + Math.floor(rnd() * 3);
+      for (let i = 0; i < topN; i++) {
+        top.push({
+          x: range(-rx * 0.6, rx * 0.6),
+          y: range(-ry * 0.6, ry * 0.6),
+          w: range(rx * 0.1, rx * 0.24),
+          h: range(ry * 0.12, ry * 0.24),
+          rot: rnd() * Math.PI,
+          a: range(0.2, 0.4),
+        });
+      }
+
+      return { rust, drips, water, top };
     }
 
     // 在平台顶面中心画完美落点圈（提示）
@@ -1174,6 +1442,9 @@
       this.autoTimer = 0;
       this.fallTimer = 0;
       this.particles = [];
+      
+      // 调试日志：世界重置
+      console.log(`[重置] 世界重置完成 | 初始平台: stone(0, 0) | 历史最高分: ${this.best}`);
     }
 
     _spawnNext() {
@@ -1201,6 +1472,9 @@
       const type = isGlass ? 'glass' : Util.pick(CONST.PLATFORM_TYPES);
       const p = new Platform(last.worldX + gap, last.worldY + offset, type);
       this.platforms.push(p);
+      
+      // 调试日志：平台生成
+      console.log(`[平台] 生成第 ${newIdx} 个平台 | 类型: ${type} | 间距: ${gap.toFixed(2)} | 偏移: ${offset.toFixed(2)} | 位置: (${p.worldX.toFixed(2)}, ${p.worldY.toFixed(2)}) | 是否玻璃: ${isGlass}`);
     }
 
     /* ---------- 状态控制 ---------- */
@@ -1212,6 +1486,9 @@
       this.camera.snapTo(this.platforms[0].worldX, this.platforms[0].worldY);
       this.state = STATE.READY;
       this._updateHUD();
+      
+      // 调试日志：游戏开始
+      console.log(`[开始] ========== 新游戏开始 ========== | 历史最高分: ${this.best} | 游戏参数: 蓄力速率=${CONST.CHARGE_RATE}, 最大跳跃=${CONST.JUMP_DIST_MAX}, 完美半径=${CONST.PERFECT_RADIUS}`);
     }
 
     _onPressStart() {
@@ -1221,10 +1498,16 @@
       this.state = STATE.CHARGING;
       this.frog.charge = 0;
       this.audio.charge();
+      
+      // 调试日志：开始蓄力
+      console.log(`[输入] 开始蓄力 | 当前得分: ${this.score} | 跳跃次数: ${this.jumps} | 连击数: ${this.combo}`);
     }
 
     _onPressEnd() {
       if (this.state !== STATE.CHARGING) return;
+      
+      // 调试日志：结束蓄力并跳跃
+      console.log(`[输入] 结束蓄力 | 最终蓄力值: ${this.frog.charge.toFixed(3)}`);
       this._performJump(this.frog.charge);
       this.audio.jump();
     }
@@ -1236,6 +1519,9 @@
       this.frog.facing = (target.worldX - this.frog.worldX) >= 0 ? 1 : -1;
       this.frog.jump(traj.landX, traj.landY, traj.toZ);
       this.state = STATE.JUMPING;
+      
+      // 调试日志：跳跃轨迹
+      console.log(`[轨迹] 计算跳跃轨迹 | 蓄力: ${power.toFixed(3)} | 目标平台: ${target.type} | 预测落点: (${traj.landX.toFixed(2)}, ${traj.landY.toFixed(2)})`);
     }
 
     // 触发自动连续跳跃（落上玻璃平台时调用）
@@ -1258,6 +1544,9 @@
       // 使用精确距离对应的蓄力值（确保落到平台中心）
       const exactPower = Math.min(exactDist / CONST.JUMP_DIST_MAX, 1);
       
+      // 调试日志：自动跳跃
+      console.log(`[自动] 自动跳跃 ${CONST.GLASS_AUTO_JUMPS - this.autoJumpsLeft + 1}/${CONST.GLASS_AUTO_JUMPS} | 剩余次数: ${this.autoJumpsLeft - 1} | 精确距离: ${exactDist.toFixed(2)} | 精确蓄力: ${exactPower.toFixed(3)}`);
+      
       this._performJump(exactPower);
       this.audio.jump();
     }
@@ -1276,7 +1565,7 @@
       const landY = fromY + ny * dist;
       const debugY = landY - target.worldY;
       const debugX = landX - target.worldX;
-      console.log({dy:dy, dx:dx, dist:dist, nx:nx, ny:ny, fromX:fromX, fromY:fromY, landX:landX, landY:landY, debugX:debugX, debugY:debugY});
+      //console.log({dy:dy, dx:dx, dist:dist, nx:nx, ny:ny, fromX:fromX, fromY:fromY, landX:landX, landY:landY, debugX:debugX, debugY:debugY});
       return { fromX, fromY, fromZ, landX, landY, toZ: target.height, power };
     }
 
@@ -1347,13 +1636,25 @@
       // 粒子
       this.particles = this.particles.filter(p => p.update(dt));
 
-      // 镜头：跟随当前平台（READY/CHARGING）或青蛙前进方向（JUMPING）
+      // 镜头：跟随青蛙 / 当前平台，并叠加「前瞻焦点」向下一平台方向偏移，
+      // 保证远距离平台可见。CHARGING 与 JUMPING 共用同一前瞻公式，
+      // 使起跳瞬间焦点连续、不出现「先后退再前进」的回拉。
       let fx, fy;
+      const cur = this.platforms[this.currentIdx];
+      const next = this.platforms[this.currentIdx + 1];
+      // 前瞻比例 t：按间距大小线性增长（满间距到中点），小间距几乎不偏移
+      let t = 0;
+      if (next) {
+        const d = Util.dist(next.worldX - cur.worldX, next.worldY - cur.worldY, 0, 0);
+        t = Util.clamp(d / CONST.PLATFORM_MAX_GAP, 0, 1) * CONST.LOOKAHEAD_RATIO;
+      }
       if (this.state === STATE.JUMPING) {
-        fx = this.frog.worldX; fy = this.frog.worldY;
+        // 起跳时 frog == cur，焦点 = cur + t·(next-cur)，与 CHARGING 末尾一致 → 无回拉
+        fx = Util.lerp(this.frog.worldX, next ? next.worldX : this.frog.worldX, t);
+        fy = Util.lerp(this.frog.worldY, next ? next.worldY : this.frog.worldY, t);
       } else {
-        const cur = this.platforms[this.currentIdx];
-        fx = cur.worldX; fy = cur.worldY;
+        fx = Util.lerp(cur.worldX, next ? next.worldX : cur.worldX, t);
+        fy = Util.lerp(cur.worldY, next ? next.worldY : cur.worldY, t);
       }
       this.camera.follow(fx, fy);
       this.camera.update(dt);
@@ -1371,9 +1672,18 @@
       const targetScreen = cam.project(target.worldX, target.worldY, 0);
       const sd = Util.dist(frogScreen.x, frogScreen.y, targetScreen.x, targetScreen.y);
 
-      // 判定半径：平台顶面在屏幕上的大致半径
-      const r = target.topR * CONST.TW; // 水平半径像素
-      const onPlatform = sd <= r;
+      // 落点是否在平台顶面内：使用归一化椭圆判定，精确匹配等距投影下的顶面轮廓。
+      // 顶面半轴：水平 a = topR*TW，垂直 b = topR*TH。落点 (dx,dy) 满足 (dx/a)²+(dy/b)²<=1 即在椭圆内。
+      // 这比内切圆判定更贴合视觉形状——水平方向容许到完整顶宽，垂直方向容许到完整顶高，
+      // 不会误拒对角向仍在顶面内的落点；边缘内缩由 LAND_INRADIUS_RATIO 控制（>1 放宽外扩、<1 收紧内缩）。
+      const dx = frogScreen.x - targetScreen.x;
+      const dy = frogScreen.y - targetScreen.y;
+      const a = target.topR * CONST.TW * CONST.LAND_INRADIUS_RATIO; // 水平半轴
+      const b = target.topR * CONST.TH * CONST.LAND_INRADIUS_RATIO; // 垂直半轴
+      const onPlatform = (dx * dx) / (a * a) + (dy * dy) / (b * b) <= 1;
+
+      // 调试日志：落地判定
+      console.log(`[落地] 落点偏移: (${dx.toFixed(2)},${dy.toFixed(2)}) | 半轴: a=${a.toFixed(2)} b=${b.toFixed(2)} | 距中心: ${sd.toFixed(2)}px | 是否在平台上: ${onPlatform} | 平台类型: ${target.type}`);
 
       if (onPlatform) {
         // 成功落地
@@ -1390,9 +1700,15 @@
           this._popCombo(this.combo);
           this._burstParticles(targetScreen.x, targetScreen.y - target.height * 0.2, '#ffd23f', 18);
           this.audio.perfect();
+          
+          // 调试日志：完美落地
+          console.log(`[完美] 完美落地! | 连击数: ${this.combo} | 本局得分: ${gain} | 总得分: ${this.score + gain}`);
         } else {
           this.combo = 0;
           this.audio.land();
+          
+          // 调试日志：普通落地
+          console.log(`[落地] 普通落地 | 本局得分: ${gain} | 总得分: ${this.score + gain} | 连击重置`);
         }
         this.score += gain;
         this._updateHUD();
@@ -1405,6 +1721,9 @@
           this._startAutoJumps();
           this._popGlass();
           this._burstParticles(targetScreen.x, targetScreen.y - target.height * 0.2, '#a8e8ff', 24);
+          
+          // 调试日志：玻璃平台触发
+          console.log(`[玻璃] 触发玻璃平台! | 自动连跳次数: ${CONST.GLASS_AUTO_JUMPS} | 延迟: ${CONST.GLASS_AUTO_DELAY}s`);
         }
       } else {
         // 失败：开始掉落动画
@@ -1415,6 +1734,9 @@
         this.frog.startFalling();
         this.fallTimer = 0;  // 掉落后延迟结束的时间
         this.state = STATE.FALLING;
+        
+        // 调试日志：跳跃失败
+        console.log(`[失败] 跳跃失败! | 最终得分: ${this.score} | 跳跃次数: ${this.jumps} | 最高连击: ${this.combo} | 历史最高: ${this.best}`);
       }
     }
 
@@ -1427,6 +1749,9 @@
       this.elFinalBest.textContent = this.best;
       this.elOverTitle.textContent = newBest ? '新纪录！' : '游戏结束';
       this.elOverTitle.classList.toggle('new-best', newBest);
+      
+      // 调试日志：游戏结束
+      console.log(`[结束] 游戏结束 | 最终得分: ${this.score} | 跳跃次数: ${this.jumps} | 是否新纪录: ${newBest} | 历史最高: ${this.best}`);
       const msgs = newBest
         ? ['青蛙之王，名不虚传！', '森林新传说诞生了', '这弹跳力，绝了']
         : ['差一点点！', '蓄力再准一点试试', '青蛙需要多练习', '再跳一次吧'];

@@ -47,7 +47,8 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 16px 18px;
+  /* 顶部用 safe-area-inset-top 避开刘海/灵动岛，左右用对应侧 inset 避开圆角 */
+  padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 0 calc(12px + env(safe-area-inset-left));
   pointer-events: none;
   z-index: 5;
 }
@@ -86,7 +87,6 @@ html, body {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  margin-bottom: 10px;
   border: 1px solid var(--panel-border);
   background: var(--panel);
   color: var(--cream);
@@ -329,3 +329,36 @@ html, body {
   .panel h1 { font-size: 34px; }
   .score-current { font-size: 34px; }
 }
+
+/* ===== 手机竖屏优化 ===== */
+/* 竖屏（H > W）：收小字号、收紧行距，避免 HUD 挤占游戏画面 */
+@media (orientation: portrait) {
+  .score-current { font-size: 38px; }
+  .score-best, .score-jumps { font-size: 12px; }
+  .score-best { margin-top: 4px; }
+  .btn-group { gap: 8px; }
+  /* 完美连击浮层略下调、字号收小，避免压住顶部分数 */
+  #combo-pop {
+    top: 42%;
+    font-size: 34px;
+  }
+}
+
+/* 超窄竖屏（小尺寸手机）：进一步收紧，确保分数与按钮不挤压 */
+@media (orientation: portrait) and (max-width: 360px) {
+  .score-current { font-size: 34px; }
+  .btn-group { gap: 6px; }
+  #hud { padding-top: calc(8px + env(safe-area-inset-top)); }
+}
+
+/* 面板在矮屏 / 窄屏上的紧凑化 */
+@media (max-width: 380px) {
+  .panel { width: 94vw; padding: 24px 20px 22px; }
+  .panel h1 { font-size: 36px; }
+  .panel h2 { font-size: 26px; }
+  .frog-mascot { width: 100px; height: 84px; margin-bottom: 12px; }
+  .tips { font-size: 13px; line-height: 1.9; }
+}
+
+/* overlay 底部留出 Home 指示条空间，使居中的面板整体上移、不被遮挡 */
+.overlay { padding-bottom: env(safe-area-inset-bottom); }
