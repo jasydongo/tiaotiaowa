@@ -46,7 +46,7 @@
 
     // 蓄力与跳跃物理
     CHARGE_RATE: 0.8,          // 每秒蓄力增长（桌面端）
-    CHARGE_RATE_MOBILE: 0.5,   // 手机端蓄力增长（更慢，便于触屏精准控力；满力约 2 秒）
+    CHARGE_RATE_MOBILE: 0.6,   // 手机端蓄力增长（更慢，便于触屏精准控力；满力约 2 秒）
     CHARGE_MAX: 1.0,
     JUMP_TIME_MIN: 0.32,
     JUMP_TIME_MAX: 1.15,
