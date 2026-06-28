@@ -1,8 +1,8 @@
-# 跳跳蛙 (Jumping Frog) 项目上下文文档
+# 蛙一跳 (Jumping Frog) 项目上下文文档
 
 ## 项目概述
 
-跳跳蛙是一个微信"跳一跳"玩法的 WEB 小游戏，采用 HTML5 Canvas 2D + 等距斜投影伪 3D 技术，无任何第三方依赖。游戏主题为深绿森林夜景，青蛙在木桩、蘑菇、石台、荷叶、树桩高塔之间蓄力跳跃，落在平台中心可触发完美连击加倍得分。
+蛙一跳是一个类似微信"跳一跳"玩法的 WEB 小游戏，采用 HTML5 Canvas 2D + 等距斜投影伪 3D 技术，无任何第三方依赖。游戏主题为深绿森林夜景，青蛙在木桩、蘑菇、石台、荷叶、树桩高塔之间蓄力跳跃，落在平台中心可触发完美连击加倍得分。
 
 ### 核心玩法
 - 按住蓄力，松开起跳，蓄力时间决定跳跃距离和高度
@@ -12,7 +12,7 @@
 - 本地自动记录历史最高分
 
 ### 特殊机制
-- 玻璃平台：每 30 次跳跃出现一次，落上触发 3 次自动连跳
+- 玻璃平台：每 20 次跳跃出现一次，落上触发 3 次自动连跳
 - 完美连击：连击数越高奖励越大（完美奖励 = 2 × 连击数）
 - 辅助线：显示蓄力时的落点预测轨迹
 
@@ -40,9 +40,13 @@ jumpfrog/
 ├── css/
 │   └── style.css       # 全屏布局、UI 浮层、SVG 青蛙 CSS 动画
 ├── js/
-│   └── game.js         # 全部游戏逻辑（模块化，单文件 1455 行）
+│   └── game.js         # 全部游戏逻辑（模块化，单文件 1530 行）
 ├── favicon.svg         # 网站 favicon
-└── README.md           # 项目说明文档
+├── README.md           # 项目说明文档
+├── AGENTS.md           # 项目上下文文档（本文件）
+└── .github/
+    └── workflows/
+        └── static.yml  # GitHub Pages 自动部署工作流
 ```
 
 ## 核心代码架构
@@ -53,11 +57,11 @@ jumpfrog/
 // 全局常量
 CONST {
   TW, TH,              // 等距投影参数
-  PLATFORM_TYPES,      // 平台类型：stump, mushroom, stone, leaf, tower, glass
+  PLATFORM_TYPES,      // 平台类型：stump, mushroom, stone, leaf, tower
   CHARGE_RATE,         // 蓄力速率
   JUMP_DIST_MAX,       // 最大跳跃距离
   PERFECT_RADIUS,      // 完美判定半径
-  GLASS_INTERVAL,      // 玻璃平台间隔（30 次）
+  GLASS_INTERVAL,      // 玻璃平台间隔（20 次）
   GLASS_AUTO_JUMPS     // 玻璃平台触发连跳次数（3 次）
 }
 
@@ -94,7 +98,7 @@ STATE = {
 | stone | 石台，苔藓点缀 | 22 | 无 |
 | leaf | 荷叶，放射状叶脉 | 12 | 0.8 |
 | tower | 树桩高塔，高而窄 | 96 | 无 |
-| glass | 玻璃平台，半透明辉光 | 34 | 无 |
+| glass | 玻璃平台，半透明辉光（特殊生成） | 34 | 无 |
 
 ### 核心游戏循环
 
@@ -148,6 +152,31 @@ npx http-server -p 8000
 - 直接修改代码后刷新浏览器即可看到效果
 - 适合快速原型开发和教学演示
 
+## CI/CD 部署
+
+### GitHub Pages 自动部署
+
+项目配置了 GitHub Actions 工作流，实现自动部署到 GitHub Pages：
+
+**工作流文件**：`.github/workflows/static.yml`
+
+**触发条件**：
+- 推送到 `master` 分支
+- 手动从 Actions 标签页触发
+
+**部署流程**：
+1. 检出代码
+2. 配置 GitHub Pages 环境
+3. 上传整个项目作为构建产物
+4. 自动部署到 GitHub Pages
+
+**权限配置**：
+- `contents: read` - 读取仓库内容
+- `pages: write` - 写入 GitHub Pages
+- `id-token: write` - OIDC 认证
+
+**并发控制**：只允许一个部署任务运行，避免冲突
+
 ## 开发规范
 
 ### 代码风格
@@ -187,10 +216,10 @@ npx http-server -p 8000
 
 ### 物理参数（可调整）
 ```javascript
-CHARGE_RATE: 1.2           // 蓄力增长速率
+CHARGE_RATE: 0.8           // 蓄力增长速率（已优化）
 JUMP_TIME_MIN: 0.32        // 最小跳跃时间
 JUMP_TIME_MAX: 1.15        // 最大跳跃时间  
-JUMP_DIST_MAX: 7.0         // 最大跳跃距离
+JUMP_DIST_MAX: 11.5        // 最大跳跃距离（已增大，支持边缘跳跃）
 JUMP_HEIGHT_MAX: 150       // 最大跳跃高度（像素）
 PERFECT_RADIUS: 7          // 完美判定半径（屏幕像素）
 ```
@@ -198,10 +227,11 @@ PERFECT_RADIUS: 7          // 完美判定半径（屏幕像素）
 ### 难度参数
 ```javascript
 PLATFORM_MIN_GAP: 2.0      // 平台间最小距离
-PLATFORM_MAX_GAP: 7.0      // 平台间最大距离
-PLATFORM_MAX_OFFSET: 2.2   // 左右最大偏移
-GLASS_INTERVAL: 30         // 玻璃平台间隔
+PLATFORM_MAX_GAP: 6.8      // 平台间最大距离（已调整）
+PLATFORM_MAX_OFFSET: 4.5   // 左右最大偏移（已增大）
+GLASS_INTERVAL: 20         // 玻璃平台间隔（已优化为 20 次）
 GLASS_AUTO_JUMPS: 3        // 连跳次数
+GLASS_AUTO_DELAY: 0.45     // 自动起跳前停留时间（秒）
 ```
 
 ## 输入控制
@@ -234,10 +264,14 @@ GLASS_AUTO_JUMPS: 3        // 连跳次数
 ### 主题配色
 ```css
 --bg-deep: #0d2b1a      // 深绿森林背景
+--bg-mid: #133d27       // 中层背景色
 --moss: #2f7d4f         // 苔藓绿
 --leaf: #6fd08a         // 鲜绿
 --amber: #ffd23f        // 琥珀色（完美连击）
 --cream: #f3ffe8        // 米白（文字）
+--danger: #ff6b6b       // 危险色
+--panel: rgba(8, 28, 18, 0.86)  // 面板背景
+--panel-border: rgba(120, 220, 150, 0.28)  // 面板边框
 ```
 
 ### 视觉效果
@@ -247,10 +281,24 @@ GLASS_AUTO_JUMPS: 3        // 连跳次数
 - 林冠月光光晕
 - 地面雾气渐变
 - 玻璃平台特殊辉光效果
+- SVG 青蛙吉祥物和 CSS 动画
 
-## 总结
+## 版本历史
 
-跳跳蛙是一个优秀的纯前端游戏项目，展示了如何用原生技术实现复杂的游戏逻辑和视觉效果。项目结构清晰，代码质量高，是学习 Canvas 游戏开发和理解游戏物理引擎的优秀案例。
+### 当前版本
+- CSS 版本：v029
+- JavaScript 版本：v031
+
+### 最近更新
+- 添加 GitHub Actions 工作流，实现自动部署
+- 优化跳跃物理参数，改善游戏手感
+- 修复从平台边缘无法跳到下个平台中心的问题
+- 添加调试信息输出
+- 优化游戏结束前的掉落逻辑
+
+## 项目特色
+
+蛙一跳是一个优秀的纯前端游戏项目，展示了如何用原生技术实现复杂的游戏逻辑和视觉效果。项目结构清晰，代码质量高，是学习 Canvas 游戏开发和理解游戏物理引擎的优秀案例。
 
 **项目特色**：
 - ✨ 零依赖，纯原生实现
@@ -259,3 +307,5 @@ GLASS_AUTO_JUMPS: 3        // 连跳次数
 - 🎵 实时合成的音效系统
 - 📱 完美的跨设备支持
 - 🏆 完整的游戏循环和状态管理
+- 🚀 自动化 CI/CD 部署流程
+- 🔧 优化的游戏参数和手感
